@@ -70,7 +70,7 @@ type TargetConfig struct {
 // Load reads and validates a target YAML file. It refuses to return a usable
 // config if meta.authorized is not explicitly true — every harness must
 // call this before dialing anything.
-func Load(path string) (*TargetConfig, error) {
+func LoadTarget(path string) (*TargetConfig, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)

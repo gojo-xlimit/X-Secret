@@ -58,7 +58,7 @@ func loadOrExit(configPath string) *config.TargetConfig {
 		fmt.Fprintln(os.Stderr, "error: -config is required")
 		os.Exit(1)
 	}
-	cfg, err := config.Load(configPath)
+	cfg, err := config.LoadTarget(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
 		os.Exit(1)
