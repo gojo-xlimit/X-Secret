@@ -1,0 +1,41 @@
+# Artillery WebSocket ramp scenario.
+# Purpose: models a *ramping arrival rate* (users/sec increasing over time)
+# rather than k6's fixed-VU model — useful for finding the exact point where
+# a Cloud Run instance starts cold-starting additional containers or where
+# connection accept latency degrades under increasing NEW-connection pressure.
+#
+# Values below are placeholders; runners/run_ws_artillery.sh overwrites the
+# 'target' and phase numbers from the shared target YAML before each run.
+#
+# Run directly:
+#   artillery run transport/websocket/artillery/ws_ramp.yml \
+#     --output results/ws-ramp-report.json
+#   artillery report results/ws-ramp-report.json   # -> HTML
+
+config:
+  target: "wss://target.example/ws"
+  ws:
+    subprotocols: []
+  phases:
+    - name: "ramp-up"
+      duration: 20
+      arrivalRate: 5
+      rampTo: 50
+    - name: "sustained"
+      duration: 60
+      arrivalRate: 50
+    - name: "ramp-down-check"
+      duration: 15
+      arrivalRate: 50
+      rampTo: 5
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: "connect-send-hold-close"
+    engine: "ws"
+    flow:
+      - send: "{{ $randomString(512) }}"
+      - think: 3
+      - send: "{{ $randomString(512) }}"
+      - think: 2

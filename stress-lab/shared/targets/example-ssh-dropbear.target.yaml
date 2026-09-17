@@ -1,0 +1,45 @@
+meta:
+  name: "example-ssh-dropbear-lab"
+  owner: "self"
+  authorized: true
+  notes: >
+    Dropbear-specific note: Dropbear historically supports a narrower cipher/
+    kex set than OpenSSH (no aes256-gcm on older builds, limited kex algos
+    on embedded/router builds commonly used for bughost SSH tunneling).
+    The Go harness (internal/harness/ssh) advertises a broad-compatible
+    cipher list and lets the server negotiate down — if handshakes fail,
+    check target Dropbear version's supported algos before assuming the
+    harness is broken.
+
+target:
+  host: "target.example"
+  port: 22
+  scheme: "ssh"
+  sni: ""
+  path: ""
+  insecure_skip_verify: false
+
+transport:
+  kind: "ssh"
+  xray_protocol: ""
+  ssh_server: "dropbear"
+
+load:
+  virtual_users: 40
+  rate_per_second: 0
+  duration_seconds: 90
+  ramp_seconds: 10
+
+payload:
+  size_bytes: 4096
+  file: ""
+
+thresholds:
+  p95_latency_ms: 1200
+  p99_latency_ms: 2500
+  error_rate_max: 0.03
+  min_success_handshake_rate: 0.95
+
+output:
+  dir: "results"
+  formats: ["json", "summary"]

@@ -1,0 +1,49 @@
+# ============================================================================
+# stress-lab :: shared target schema
+# Single source of truth consumed by every runner (k6 / ghz / artillery / go).
+# Copy this file per test as: shared/targets/<name>.target.yaml
+# All runner wrapper scripts (runners/*.sh) parse this via yq and export
+# STRESSLAB_* env vars consumed by the underlying tool's config/script.
+# ============================================================================
+
+meta:
+  name: "example-cloudrun-vless-ws"        # unique id, used for result dir naming
+  owner: "self"                            # informational; not used by tooling
+  authorized: true                         # MUST be true — runners refuse to execute if false
+  notes: "Lab target — replace before running against real infra"
+
+target:
+  host: "target.example"                  # placeholder — replace with owned infra
+  port: 443
+  scheme: "https"                          # https | http | wss | ws | grpc | ssh | raw-tls
+  sni: "target.example"                    # SNI to present (CDN passthrough testing)
+  path: "/ws"                              # for ws/httpupgrade/xhttp transports
+  insecure_skip_verify: false              # true only for self-signed lab certs
+
+transport:
+  kind: "websocket"                        # http1 | http2 | websocket | httpupgrade | xhttp | grpc | xray | ssh
+  xray_protocol: ""                        # vless | vmess | trojan (only if kind == xray)
+  ssh_server: ""                           # openssh | dropbear (only if kind == ssh)
+
+load:
+  # Interpreted differently per tool (documented per-runner), but every
+  # runner MUST honor these four fields at minimum.
+  virtual_users: 50                        # concurrency / VUs / -c
+  rate_per_second: 0                       # 0 = unbounded/VU-driven; >0 = fixed arrival rate
+  duration_seconds: 60
+  ramp_seconds: 10                         # ramp-up before steady state; 0 = instant
+
+payload:
+  size_bytes: 1024                         # request/message body size
+  file: ""                                 # optional path to shared/payloads/*.bin, overrides size_bytes
+
+thresholds:
+  # Used by k6 (native) and enforced manually in ghz/artillery/go wrappers.
+  p95_latency_ms: 800
+  p99_latency_ms: 1500
+  error_rate_max: 0.02                     # 2%
+  min_success_handshake_rate: 0.98
+
+output:
+  dir: "results"                           # base dir; runner appends /<meta.name>/<timestamp>/
+  formats: ["json", "summary"]             # json | csv | summary

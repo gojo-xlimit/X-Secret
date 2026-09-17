@@ -1,0 +1,37 @@
+# ghz configuration for the stresslab EchoService target.
+# Placeholders here are overwritten by runners/run_grpc_ghz.sh from the
+# shared target YAML (host, port, concurrency, duration, payload size).
+#
+# Run directly:
+#   ghz --config transport/grpc/ghz/ghz_config.toml
+
+proto = "transport/grpc/ghz/echo.proto"
+call = "stresslab.EchoService.Echo"
+
+host = "target.example:443"
+
+# TLS — ghz defaults to using the system trust store; set insecure=true only
+# for self-signed lab certs.
+insecure = false
+
+# Constant concurrency load schedule (see ghz --load-schedule=const|step|line).
+concurrency-schedule = "const"
+concurrency = 50
+
+# Constant-rate cap; 0 = unbounded (VU-driven by concurrency alone).
+rps = 0
+
+duration = "60s"
+
+# Per-call timeout.
+timeout = "20s"
+
+# Keepalive so idle streams don't get silently dropped by CDN/LB in front
+# of Cloud Run during sustained-connection tests.
+keepalive = "10s"
+
+data = "{\"payload\": \"eHheHhlIHNhbXBsZSBwYXlsb2Fk\"}"
+
+# ghz native output formats: summary (human), json, csv, html, influx-summary, prometheus.
+format = "json"
+output = "results/grpc-ghz-result.json"

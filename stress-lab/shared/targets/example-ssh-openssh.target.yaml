@@ -1,0 +1,38 @@
+meta:
+  name: "example-ssh-openssh-lab"
+  owner: "self"
+  authorized: true
+  notes: "Credentials via env STRESSLAB_SSH_USER / STRESSLAB_SSH_PASS or STRESSLAB_SSH_KEY, never hardcoded"
+
+target:
+  host: "target.example"
+  port: 22
+  scheme: "ssh"
+  sni: ""
+  path: ""
+  insecure_skip_verify: false
+
+transport:
+  kind: "ssh"
+  xray_protocol: ""
+  ssh_server: "openssh"
+
+load:
+  virtual_users: 40
+  rate_per_second: 0
+  duration_seconds: 90
+  ramp_seconds: 10
+
+payload:
+  size_bytes: 4096
+  file: ""
+
+thresholds:
+  p95_latency_ms: 1200
+  p99_latency_ms: 2500
+  error_rate_max: 0.03
+  min_success_handshake_rate: 0.95
+
+output:
+  dir: "results"
+  formats: ["json", "summary"]
