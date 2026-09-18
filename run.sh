@@ -14,7 +14,7 @@ if ! command -v k6 >/dev/null 2>&1; then
   sudo apt-get install -y k6
 fi
 
-cat > /tmp/wstest.js << 'EOJS'
+cat > ./wstest.js << 'EOJS'
 import ws from 'k6/ws';
 import { check } from 'k6';
 
@@ -74,4 +74,4 @@ echo ""
 
 k6 run -e URL="$TARGET_URL" -e RPS="$RPS" -e DURATION="$DURATION" \
        -e CONCURRENCY="$CONCURRENCY" -e HOLD_SECONDS="$HOLD_SECONDS" \
-       -e PAYLOAD_BYTES="$PAYLOAD_BYTES" /tmp/wstest.js
+       -e PAYLOAD_BYTES="$PAYLOAD_BYTES" ./wstest.js
