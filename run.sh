@@ -96,7 +96,7 @@ if [[ -z "$GIVEN_PATH" || "$GIVEN_PATH" == "/" ]]; then
     STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 --http1.1 \
       -H "Connection: Upgrade" -H "Upgrade: websocket" \
       -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-      "https://${HOST}:${PORT}${p}" 2>/dev/null)
+      "https://${HOST}:${PORT}${p}" 2>/dev/null || true)
     echo "  trying ${p} ... status=${STATUS}"
     if [[ "$STATUS" == "101" ]]; then
       FOUND_PATH="$p"
