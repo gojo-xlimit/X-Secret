@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== stress-lab ==="
+echo "=== stress-lab (multi-scenario) ==="
 
 if ! command -v k6 >/dev/null 2>&1; then
   echo "Installing k6..."
@@ -14,48 +14,12 @@ if ! command -v k6 >/dev/null 2>&1; then
   sudo apt-get install -y k6
 fi
 
-cat > ./wstest.js << 'EOJS'
-import ws from 'k6/ws';
-import { check } from 'k6';
-
-const URL = __ENV.URL;
-if (!URL) { throw new Error('Set -e URL=wss://your-target.example/path'); }
-
-const RPS = parseInt(__ENV.RPS || '0');
-const DURATION = __ENV.DURATION || '30s';
-const CONCURRENCY = parseInt(__ENV.CONCURRENCY || '20');
-const RAMP = __ENV.RAMP || '5s';
-const HOLD_SECONDS = parseFloat(__ENV.HOLD_SECONDS || '10');
-const PAYLOAD_BYTES = parseInt(__ENV.PAYLOAD_BYTES || '1024');
-
-export const options = RPS > 0 ? {
-  scenarios: { capped_rate: { executor: 'constant-arrival-rate', rate: RPS, timeUnit: '1s', duration: DURATION, preAllocatedVUs: CONCURRENCY, maxVUs: CONCURRENCY * 2 } }
-} : {
-  stages: [ { duration: RAMP, target: CONCURRENCY }, { duration: DURATION, target: CONCURRENCY } ]
-};
-
-export default function () {
-  const payload = 'x'.repeat(PAYLOAD_BYTES);
-  const res = ws.connect(URL, {}, function (socket) {
-    socket.on('open', () => {
-      socket.send(payload);
-      socket.setInterval(() => { socket.send(payload); }, 500);
-    });
-    socket.on('message', () => {});
-    socket.on('error', () => {});
-    socket.setTimeout(() => { socket.close(); }, HOLD_SECONDS * 1000);
-  });
-  check(res, { 'connected (101)': (r) => r && r.status === 101 });
-}
-EOJS
-
 echo ""
 read -rp "Target (URL only, or full URL with path): " RAW_TARGET
-read -rp "RPS [default 500]: " IN_RPS
-read -rp "Duration in seconds [default 60]: " IN_DURATION
-read -rp "Concurrency [default 1000]: " IN_CONCURRENCY
-read -rp "Hold seconds per connection [default 30]: " IN_HOLD
-read -rp "Payload bytes [default 4096]: " IN_PAYLOAD
+read -rp "Duration in minutes [default 3]: " IN_MINUTES
+read -rp "Max concurrent WebSocket connections [default 500]: " IN_WS_VUS
+read -rp "Max concurrent HTTP GET requests [default 500]: " IN_GET_VUS
+read -rp "Max concurrent JSON POST requests [default 500]: " IN_POST_VUS
 
 if [[ -z "$RAW_TARGET" ]]; then
   echo "No target given. Exiting."
@@ -63,10 +27,8 @@ if [[ -z "$RAW_TARGET" ]]; then
 fi
 
 if [[ "$RAW_TARGET" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*)://(.*)$ ]]; then
-  SCHEME="${BASH_REMATCH[1]}"
   REST="${BASH_REMATCH[2]}"
 else
-  SCHEME="https"
   REST="$RAW_TARGET"
 fi
 
@@ -105,32 +67,84 @@ if [[ -z "$GIVEN_PATH" || "$GIVEN_PATH" == "/" ]]; then
     fi
   done
 
-  if [[ -z "$FOUND_PATH" ]]; then
-    echo ""
-    echo "No common path returned a successful WebSocket upgrade (101)."
-    echo "This target likely uses a custom/random path — for example, the"
-    echo "path shown in your panel's connection link or QR code."
-    echo "Re-run and provide the full URL with that path, e.g.:"
-    echo "  wss://${HOST}:${PORT}/your-custom-path"
-    exit 1
-  fi
+  [[ -z "$FOUND_PATH" ]] && FOUND_PATH="/"
   GIVEN_PATH="$FOUND_PATH"
 fi
 
-TARGET_URL="wss://${HOST}:${PORT}${GIVEN_PATH}"
-echo ""
-echo "Using target: $TARGET_URL"
+WSS_URL="wss://${HOST}:${PORT}${GIVEN_PATH}"
+HTTPS_URL="https://${HOST}:${PORT}${GIVEN_PATH}"
 
-RPS="${IN_RPS:-500}"
-DURATION="${IN_DURATION:-60}s"
-CONCURRENCY="${IN_CONCURRENCY:-1000}"
-HOLD_SECONDS="${IN_HOLD:-30}"
-PAYLOAD_BYTES="${IN_PAYLOAD:-4096}"
+MINUTES="${IN_MINUTES:-3}"
+WS_VUS="${IN_WS_VUS:-500}"
+GET_VUS="${IN_GET_VUS:-500}"
+POST_VUS="${IN_POST_VUS:-500}"
 
 echo ""
-echo "Running: RPS=$RPS DURATION=$DURATION CONCURRENCY=$CONCURRENCY HOLD_SECONDS=$HOLD_SECONDS PAYLOAD_BYTES=$PAYLOAD_BYTES"
+echo "WS target   : $WSS_URL"
+echo "HTTP target : $HTTPS_URL"
+echo "duration    : ${MINUTES}m per scenario"
+echo "ws_vus=$WS_VUS get_vus=$GET_VUS post_vus=$POST_VUS"
 echo ""
 
-k6 run -e URL="$TARGET_URL" -e RPS="$RPS" -e DURATION="$DURATION" \
-       -e CONCURRENCY="$CONCURRENCY" -e HOLD_SECONDS="$HOLD_SECONDS" \
-       -e PAYLOAD_BYTES="$PAYLOAD_BYTES" ./wstest.js
+cat > ./multitest.js << EOJS
+import ws from 'k6/ws';
+import http from 'k6/http';
+import { check } from 'k6';
+
+const WSS_URL = '${WSS_URL}';
+const HTTPS_URL = '${HTTPS_URL}';
+const DUR = '${MINUTES}m';
+
+export const options = {
+  scenarios: {
+    websocket_connections: {
+      executor: 'ramping-vus',
+      exec: 'wsTest',
+      startVUs: 0,
+      stages: [ { duration: '20s', target: ${WS_VUS} }, { duration: DUR, target: ${WS_VUS} } ],
+      gracefulRampDown: '10s',
+    },
+    frontend_assets_load: {
+      executor: 'ramping-vus',
+      exec: 'getTest',
+      startVUs: 0,
+      stages: [ { duration: '20s', target: ${GET_VUS} }, { duration: DUR, target: ${GET_VUS} } ],
+      gracefulRampDown: '10s',
+    },
+    json_post_stress: {
+      executor: 'ramping-vus',
+      exec: 'postTest',
+      startVUs: 0,
+      stages: [ { duration: '20s', target: ${POST_VUS} }, { duration: DUR, target: ${POST_VUS} } ],
+      gracefulRampDown: '10s',
+    },
+  },
+};
+
+export function wsTest() {
+  const payload = 'x'.repeat(4096);
+  const res = ws.connect(WSS_URL, {}, function (socket) {
+    socket.on('open', () => {
+      socket.send(payload);
+      socket.setInterval(() => { socket.send(payload); }, 500);
+    });
+    socket.on('message', () => {});
+    socket.on('error', () => {});
+    socket.setTimeout(() => { socket.close(); }, 20000);
+  });
+  check(res, { 'ws connected (101)': (r) => r && r.status === 101 });
+}
+
+export function getTest() {
+  const res = http.get(HTTPS_URL);
+  check(res, { 'get status ok': (r) => r.status >= 200 && r.status < 500 });
+}
+
+export function postTest() {
+  const body = JSON.stringify({ test: 'stresslab', ts: Date.now() });
+  const res = http.post(HTTPS_URL, body, { headers: { 'Content-Type': 'application/json' } });
+  check(res, { 'post status ok': (r) => r.status >= 200 && r.status < 500 });
+}
+EOJS
+
+k6 run ./multitest.js
