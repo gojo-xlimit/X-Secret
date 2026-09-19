@@ -50,23 +50,82 @@ export default function () {
 EOJS
 
 echo ""
-read -rp "Target URL (full, with path — e.g. wss://host.run.app/yourpath): " TARGET_URL
+read -rp "Target (URL only, or full URL with path): " RAW_TARGET
 read -rp "RPS [default 500]: " IN_RPS
 read -rp "Duration in seconds [default 60]: " IN_DURATION
 read -rp "Concurrency [default 1000]: " IN_CONCURRENCY
 read -rp "Hold seconds per connection [default 30]: " IN_HOLD
 read -rp "Payload bytes [default 4096]: " IN_PAYLOAD
 
+if [[ -z "$RAW_TARGET" ]]; then
+  echo "No target given. Exiting."
+  exit 0
+fi
+
+if [[ "$RAW_TARGET" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*)://(.*)$ ]]; then
+  SCHEME="${BASH_REMATCH[1]}"
+  REST="${BASH_REMATCH[2]}"
+else
+  SCHEME="https"
+  REST="$RAW_TARGET"
+fi
+
+if [[ "$REST" =~ ^([^/]+)(/.*)?$ ]]; then
+  HOSTPORT="${BASH_REMATCH[1]}"
+  GIVEN_PATH="${BASH_REMATCH[2]:-}"
+else
+  HOSTPORT="$REST"
+  GIVEN_PATH=""
+fi
+
+if [[ "$HOSTPORT" =~ ^([^:]+):([0-9]+)$ ]]; then
+  HOST="${BASH_REMATCH[1]}"
+  PORT="${BASH_REMATCH[2]}"
+else
+  HOST="$HOSTPORT"
+  PORT=443
+fi
+
+if [[ -z "$GIVEN_PATH" || "$GIVEN_PATH" == "/" ]]; then
+  echo ""
+  echo "No path given — probing common paths on ${HOST}:${PORT} ..."
+  CANDIDATE_PATHS=("/" "/ws" "/websocket" "/vless" "/vmess" "/trojan" "/tr-ws" "/tr-ws-xray" "/xray" "/proxy")
+  FOUND_PATH=""
+
+  for p in "${CANDIDATE_PATHS[@]}"; do
+    STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 --http1.1 \
+      -H "Connection: Upgrade" -H "Upgrade: websocket" \
+      -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+      "https://${HOST}:${PORT}${p}" 2>/dev/null)
+    echo "  trying ${p} ... status=${STATUS}"
+    if [[ "$STATUS" == "101" ]]; then
+      FOUND_PATH="$p"
+      echo "  -> match found: ${p}"
+      break
+    fi
+  done
+
+  if [[ -z "$FOUND_PATH" ]]; then
+    echo ""
+    echo "No common path returned a successful WebSocket upgrade (101)."
+    echo "This target likely uses a custom/random path — for example, the"
+    echo "path shown in your panel's connection link or QR code."
+    echo "Re-run and provide the full URL with that path, e.g.:"
+    echo "  wss://${HOST}:${PORT}/your-custom-path"
+    exit 1
+  fi
+  GIVEN_PATH="$FOUND_PATH"
+fi
+
+TARGET_URL="wss://${HOST}:${PORT}${GIVEN_PATH}"
+echo ""
+echo "Using target: $TARGET_URL"
+
 RPS="${IN_RPS:-500}"
 DURATION="${IN_DURATION:-60}s"
 CONCURRENCY="${IN_CONCURRENCY:-1000}"
 HOLD_SECONDS="${IN_HOLD:-30}"
 PAYLOAD_BYTES="${IN_PAYLOAD:-4096}"
-
-if [[ -z "$TARGET_URL" ]]; then
-  echo "No URL given. Exiting."
-  exit 0
-fi
 
 echo ""
 echo "Running: RPS=$RPS DURATION=$DURATION CONCURRENCY=$CONCURRENCY HOLD_SECONDS=$HOLD_SECONDS PAYLOAD_BYTES=$PAYLOAD_BYTES"
